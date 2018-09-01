@@ -1,5 +1,5 @@
-module Lazy.Tree exposing
-    ( Tree(..), Forest, singleton, build, fromList
+module Tree exposing
+    ( Tree(..), Forest, singleton
     , isEmpty, item, children, descendants
     , insert
     , map, map2, filter, filterMap, sort, sortBy, sortWith, andMap, flatten, andThen
@@ -11,13 +11,10 @@ module Lazy.Tree exposing
 > In computing, a multi-way tree or rose tree is a tree data structure
 > with a variable and unbounded number of branches per node.
 
-This particular implementation uses lazy list construction (using `LList` module)
-to lazily evaluate levels of Tree.
-
 
 # Types & Constructor
 
-@docs Tree, Forest, singleton, build, fromList
+@docs Tree, Forest, singleton
 
 
 # Query
@@ -41,21 +38,15 @@ to lazily evaluate levels of Tree.
 
 -}
 
-import Lazy.LList as LL exposing (LList)
 
-
-{-| \*\* Be careful when comparing `Tree`s using `(==)`.\*\*
-Due to use of lazyness `(==)` isn't reliable for comparing Trees.
--}
+{-| -}
 type Tree a
     = Tree a (Forest a)
 
 
-{-| \*\* Be careful when comparing `Forest`s using `(==)`.\*\*
-Due to use of lazyness `(==)` isn't reliable for comparing Forests.
--}
+{-| -}
 type alias Forest a =
-    LList (Tree a)
+    List (Tree a)
 
 
 
@@ -71,40 +62,7 @@ type alias Forest a =
 -}
 singleton : a -> Tree a
 singleton a =
-    Tree a LL.empty
-
-
-{-| Build `Tree` using custom constructor.
-
-This can be for instance used to build `Tree` from other recursive data structre:
-
-    type Item = Item String (List Item)
-
-    getChildren (Item _ children) = children
-
-    Item "foo" [ Item "bar" [], Item "baz" []]
-        |> build getChildren
-        |> children
-    -> [ Item "bar" [], Item "baz" [] ]
-
-Or lookups to some other data structure.
-
-    import Dict exposing (Dict)
-
-    rootItem : String
-    rootItem = "foo"
-
-    childrenDict : Dict String (List String)
-    childrenDict = Dict.fromList [ ("foo", [ "bar", "baz" ]) ]
-
-    build (Maybe.withDefault [] << flip Dict.get childrenDict) rootItem
-        |> children
-    --> [ "bar", "baz" ]
-
--}
-build : (a -> List a) -> a -> Tree a
-build getChildren root =
-    Tree root <| LL.map (build getChildren) <| LL.llist getChildren root
+    Tree a []
 
 
 {-| Check if `Tree` doesn't have any child.
@@ -147,26 +105,22 @@ item (Tree i _) =
 -}
 children : Tree a -> List a
 children =
-    List.map item << LL.toList << descendants
+    List.map item << descendants
 
 
 {-| Obtain descendants as `Forest` from the `Tree`.
-
-    import Lazy.LList as LL
 
     singleton "foo"
         |> insert (singleton "bar")
         |> insert (singleton "baz")
         |> descendants
-        |> LL.map item
-        |> LL.toList
+        |> List.map item
     --> [ "bar", "baz" ]
 
     singleton "foo"
         |> insert (singleton "bar" |> insert (singleton "baz"))
         |> descendants
-        |> LL.map (children)
-        |> LL.toList
+        |> List.map (children)
     --> [ [ "baz" ] ]
 
 -}
@@ -203,8 +157,8 @@ map predicate (Tree a forest) =
 
     import Lazy.LList as LL
 
-    Tree 1 (LL.fromList [ singleton 2, singleton 3, singleton 4 ])
-        |> map2 (+) (Tree 5 <| LL.fromList [ singleton 6, singleton 7 ])
+    Tree 1 (List.fromList [ singleton 2, singleton 3, singleton 4 ])
+        |> map2 (+) (Tree 5 <| List.fromList [ singleton 6, singleton 7 ])
         |> children
     --> [ 8, 10 ]
 
@@ -221,30 +175,27 @@ This means that nodes that doesn't satisfy predicate
 are excluded and filter is never performed over their children
 even if on those it might pass.
 
-    import Lazy.LList as LL
-
-    Tree 1 (LL.fromList [ singleton 2, singleton 3, singleton 4 ])
+    Tree 1 [ singleton 2, singleton 3, singleton 4 ]
         |> filter ((>) 4)
         |> children
     --> [ 2, 3 ]
 
-    Tree 1 (LL.fromList [ insert (singleton 5) <| singleton 2, insert (singleton 6) <| singleton 3, singleton 4 ])
+    Tree 1 [ insert (singleton 5) <| singleton 2, insert (singleton 6) <| singleton 3, singleton 4 ]
         |> filter ((<) 2)
         |> descendants
-        |> LL.map children
-        |> LL.toList
+        |> List.map children
     --> [ [ 6 ], [] ]
 
 -}
 filter : (a -> Bool) -> Tree a -> Tree a
-filter predicate (Tree item c) =
-    Tree item <| LL.filterMap (filter_ predicate) c
+filter predicate (Tree i c) =
+    Tree i <| List.filterMap (filter_ predicate) c
 
 
 filter_ : (a -> Bool) -> Tree a -> Maybe (Tree a)
-filter_ predicate (Tree item c) =
-    if predicate item then
-        Just <| Tree item <| LL.filterMap (filter_ predicate) c
+filter_ predicate (Tree i c) =
+    if predicate i then
+        Just <| Tree i <| List.filterMap (filter_ predicate) c
 
     else
         Nothing
@@ -254,23 +205,21 @@ filter_ predicate (Tree item c) =
 In case of `filterMap` even root node has to satisfy predicate otherwise
 `Nothing` is returned.
 
-    import Lazy.LList as LL
-
-    Tree 1 (LL.fromList [ singleton 2, singleton 3, singleton 4 ])
+    Tree 1 [ singleton 2, singleton 3, singleton 4 ]
         |> filterMap (\a -> if a < 4 then Just (a * 2) else Nothing)
         |> Maybe.map children
     --> Just [ 4, 6 ]
 
-    Tree 1 (LL.fromList [ singleton 2, singleton 3, singleton 4 ])
+    Tree 1 [ singleton 2, singleton 3, singleton 4 ]
         |> filterMap (\a -> if a > 2 then Just (a * 2) else Nothing)
         |> Maybe.map children
     --> Nothing
 
 -}
 filterMap : (a -> Maybe b) -> Tree a -> Maybe (Tree b)
-filterMap predicate (Tree item c) =
-    predicate item
-        |> Maybe.map (\i -> Tree i <| LL.filterMap (filterMap predicate) c)
+filterMap predicate (Tree item_ c) =
+    predicate item_
+        |> Maybe.map (\i -> Tree i <| List.filterMap (filterMap predicate) c)
 
 
 {-| Sort `tree`.
@@ -287,17 +236,16 @@ it applies all levels:
     import Lazy.LList as LL
 
     singleton 10
-        |> insert (Tree 20 <| LL.llist (List.reverse << List.map singleton << List.range 1) 5)
+        |> insert (Tree 20 <| (List.reverse << List.map singleton << List.range 1) 5)
         |> sort
         |> descendants
-        |> LL.map children
-        |> LL.toList
+        |> List.map children
     --> [ [ 1, 2, 3, 4, 5 ] ]
 
 -}
 sort : Tree comparable -> Tree comparable
 sort (Tree a f) =
-    Tree a <| LL.map sort <| LL.sortBy item f
+    Tree a <| List.map sort <| List.sortBy item f
 
 
 {-| Sort `Tree` by a function.
@@ -311,22 +259,19 @@ sort (Tree a f) =
 
 it applies to all levels:
 
-    import Lazy.LList as LL
-
     singleton { a = 10 }
-        |> insert (Tree { a = 20 } <| LL.llist (List.reverse << List.map (\v -> singleton { a = v }) << List.range 1) 3)
+        |> insert (Tree { a = 20 } <| (List.reverse << List.map (\v -> singleton { a = v }) << List.range 1) 3)
         |> sortBy .a
         |> descendants
-        |> LL.map children
-        |> LL.toList
+        |> List.map children
     --> [ [ { a = 1 }, { a = 2 }, { a = 3 } ] ]
 
 -}
 sortBy : (a -> comparable) -> Tree a -> Tree a
 sortBy predicate (Tree a f) =
     Tree a <|
-        LL.map (sortBy predicate) <|
-            LL.sortBy (predicate << item) f
+        List.map (sortBy predicate) <|
+            List.sortBy (predicate << item) f
 
 
 {-| Sort `Tree` using custom Ordering function
@@ -347,19 +292,19 @@ sortBy predicate (Tree a f) =
 
 -}
 sortWith : (a -> a -> Order) -> Tree a -> Tree a
-sortWith predicate (Tree a f) =
-    Tree a <|
-        LL.map (sortWith predicate) <|
-            LL.sortWith (\a b -> predicate (item a) (item b)) f
+sortWith predicate (Tree i f) =
+    Tree i <|
+        List.map (sortWith predicate) <|
+            List.sortWith (\a b -> predicate (item a) (item b)) f
 
 
 {-| Chain map operations.
 
     import Lazy.LList as LL
 
-    Tree (,) (LL.fromList [ singleton (,), singleton (,), singleton (,) ])
-        |> andMap (Tree 1 <| LL.fromList [ singleton 2, singleton 3, singleton 4 ])
-        |> andMap (Tree 5 <| LL.fromList [ singleton 6, singleton 7 ])
+    Tree Tuple.pair [ singleton Tuple.pair, singleton Tuple.pair, singleton Tuple.pair ]
+        |> andMap (Tree 1 <| List.fromList [ singleton 2, singleton 3, singleton 4 ])
+        |> andMap (Tree 5 <| List.fromList [ singleton 6, singleton 7 ])
         |> children
     --> [ (2, 6), (3, 7) ]
 
@@ -376,27 +321,23 @@ andMap =
         |> item
     --> 1
 
-    import Lazy.LList as LL
-
-    Tree (Tree "foo" <| LL.fromList [ singleton "bar"]) (LL.fromList [ singleton <| singleton "baz" ])
+    Tree (Tree "foo" [ singleton "bar"]) [ singleton <| singleton "baz" ]
         |> flatten
         |> children
     --> [ "bar", "baz" ]
 
 -}
 flatten : Tree (Tree a) -> Tree a
-flatten (Tree (Tree item c) children) =
-    Tree item <| LL.append c <| LL.map flatten children
+flatten (Tree (Tree i c) f) =
+    Tree i <| List.append c <| List.map flatten f
 
 
 {-| Map given function onto a `Tree` and flatten the result.
 
-    import Lazy.LList as LL
-
     singleton "foo"
         |> insert (singleton "bar")
         |> insert (singleton "baz")
-        |> andThen (\a -> Tree a <| LL.fromList [ singleton <| a ++ " fighter" ])
+        |> andThen (\a -> Tree a [ singleton <| a ++ " fighter" ])
         |> children
     --> [ "foo fighter", "bar", "baz" ]
 
@@ -421,88 +362,38 @@ andThen fc =
 
 -}
 insert : Tree a -> Tree a -> Tree a
-insert t (Tree item c) =
-    Tree item <| LL.append c <| LL.fromList [ t ]
+insert t (Tree i c) =
+    Tree i <| List.append c [ t ]
 
 
 
 -- Forest
 
 
-{-| Construct `Forest` from a list.
-
-    import Lazy.LList as LL
-
-    [ { id = 1, parent = Nothing }
-    , { id = 2, parent = Nothing }
-    , { id = 3, parent = Just 1 }
-    ]
-        |> fromList (\p i -> Maybe.map .id p == i.parent)
-        |> LL.map (.id << item)
-        |> LL.toList
-    --> [ 1, 2 ]
-
-    [ { id = 1, parent = Nothing }
-    , { id = 2, parent = Nothing }
-    , { id = 3, parent = Just 1 }
-    , { id = 4, parent = Just 1 }
-    , { id = 5, parent = Just 2 }
-    ]
-        |> fromList (\p i -> Maybe.map .id p == i.parent)
-        |> LL.andThen descendants
-        |> LL.map (.id << item)
-        |> LL.toList
-    --> [ 3, 4, 5 ]
-
--}
-fromList : (Maybe a -> a -> Bool) -> List a -> Forest a
-fromList isParent =
-    fromList_ Nothing isParent
-
-
-fromList_ : Maybe a -> (Maybe a -> a -> Bool) -> List a -> Forest a
-fromList_ parent isParent list =
-    LL.llist (List.map (constructTree isParent list) << List.filter (isParent parent)) list
-
-
 {-| Map function over `Forest`.
 
     import Lazy.LList as LL
 
-    [ 1, 2, 3 ]
-        |> fromList (\m _ -> m == Nothing)
+    [ singleton 1, singleton 2, singleton 3 ]
         |> forestMap ((+) 1)
-        |> LL.map item
-        |> LL.toList
+        |> List.map item
     --> [ 2, 3, 4 ]
 
 -}
 forestMap : (a -> b) -> Forest a -> Forest b
 forestMap predicate =
-    LL.map (map predicate)
+    List.map (map predicate)
 
 
 {-| Map function over two `Forest`s.
 
-    import Lazy.LList as LL
-
-    [ 1, 2, 3 ]
-        |> fromList (\m _ -> m == Nothing)
-        |> forestMap2 (+) (fromList (\m _ -> m == Nothing) [1, 2])
-        |> LL.map item
-        |> LL.toList
+    [ singleton 1, singleton 2, singleton 3 ]
+        |> forestMap2 (+) [ singleton 1, singleton 2]
+        |> List.map item
+        |> List.toList
     --> [ 2, 4 ]
 
 -}
 forestMap2 : (a -> b -> c) -> Forest a -> Forest b -> Forest c
 forestMap2 predicate =
-    LL.map2 (map2 predicate)
-
-
-
--- Private
-
-
-constructTree : (Maybe a -> a -> Bool) -> List a -> a -> Tree a
-constructTree isParent list item =
-    Tree item <| fromList_ (Just item) isParent list
+    List.map2 (map2 predicate)
